@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     google_application_credentials: Optional[str] = None
     google_sheets_spreadsheet_id: Optional[str] = None
+    use_adk_orchestrator: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

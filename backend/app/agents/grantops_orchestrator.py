@@ -18,6 +18,58 @@ TOP_FOR_DEEP_DIVE = 3
 TOP_FOR_REPORT = 5
 
 
+def select_top_opportunities_for_context(
+    db: Session, context: AgentContext
+) -> AgentStepResult:
+    """Rank opportunities from this run and set context.top_opportunity_ids (top 3)."""
+    opps: list[GrantOpportunity] = []
+    for opp_id in context.opportunity_ids:
+        opp = db.get(GrantOpportunity, opp_id)
+        if opp is not None:
+            opps.append(opp)
+
+    opps.sort(
+        key=lambda item: (
+            item.fit_score is None,
+            -(item.fit_score or 0),
+            item.deadline is None,
+            item.deadline or "",
+        ),
+    )
+
+    top_for_report = opps[:TOP_FOR_REPORT]
+    top_for_deep_dive = opps[:TOP_FOR_DEEP_DIVE]
+    context.top_opportunity_ids = [opp.id for opp in top_for_deep_dive]
+
+    top_opportunities = [
+        {
+            "id": opp.id,
+            "title": opp.title,
+            "agency": opp.agency,
+            "fit_score": opp.fit_score,
+            "recommendation": opp.recommendation,
+            "deadline": opp.deadline.isoformat() if opp.deadline else None,
+            "fit_summary": opp.fit_summary,
+        }
+        for opp in top_for_report
+    ]
+
+    return AgentStepResult(
+        step="select_top_opportunities",
+        status="completed",
+        message=(
+            f"Selected {len(top_for_report)} top opportunities "
+            f"({len(top_for_deep_dive)} for literature and AI summaries)."
+        ),
+        data={
+            "top_count": len(top_for_report),
+            "deep_dive_count": len(top_for_deep_dive),
+            "top_opportunity_ids": context.top_opportunity_ids,
+            "top_opportunities": top_opportunities,
+        },
+    )
+
+
 @dataclass
 class DiscoveryWorkflowReport:
     query: str
@@ -63,54 +115,6 @@ class GrantOpsOrchestrator:
         self.literature_agent = LiteratureAgent()
         self.proposal_agent = ProposalAgent()
 
-    def _select_top_opportunities(self, context: AgentContext) -> AgentStepResult:
-        opps: list[GrantOpportunity] = []
-        for opp_id in context.opportunity_ids:
-            opp = self.db.get(GrantOpportunity, opp_id)
-            if opp is not None:
-                opps.append(opp)
-
-        opps.sort(
-            key=lambda item: (
-                item.fit_score is None,
-                -(item.fit_score or 0),
-                item.deadline is None,
-                item.deadline or "",
-            ),
-        )
-
-        top_for_report = opps[:TOP_FOR_REPORT]
-        top_for_deep_dive = opps[:TOP_FOR_DEEP_DIVE]
-        context.top_opportunity_ids = [opp.id for opp in top_for_deep_dive]
-
-        top_opportunities = [
-            {
-                "id": opp.id,
-                "title": opp.title,
-                "agency": opp.agency,
-                "fit_score": opp.fit_score,
-                "recommendation": opp.recommendation,
-                "deadline": opp.deadline.isoformat() if opp.deadline else None,
-                "fit_summary": opp.fit_summary,
-            }
-            for opp in top_for_report
-        ]
-
-        return AgentStepResult(
-            step="select_top_opportunities",
-            status="completed",
-            message=(
-                f"Selected {len(top_for_report)} top opportunities "
-                f"({len(top_for_deep_dive)} for literature and AI summaries)."
-            ),
-            data={
-                "top_count": len(top_for_report),
-                "deep_dive_count": len(top_for_deep_dive),
-                "top_opportunity_ids": context.top_opportunity_ids,
-                "top_opportunities": top_opportunities,
-            },
-        )
-
     def run_discovery_workflow(self, query: str, rows: int = 25) -> DiscoveryWorkflowReport:
         context = AgentContext(db=self.db, query=query, rows=rows)
         report = DiscoveryWorkflowReport(query=query.strip(), rows=rows, status="running")
@@ -136,7 +140,7 @@ class GrantOpsOrchestrator:
             return report
         report.opportunities_scored = int(scoring_result.data.get("opportunities_scored", 0))
 
-        selection_result = self._select_top_opportunities(context)
+        selection_result = select_top_opportunities_for_context(self.db, context)
         report.steps.append(selection_result)
         report.top_opportunities = selection_result.data.get("top_opportunities", [])
 

@@ -21,6 +21,7 @@ class DiscoveryWorkflowResponse(BaseModel):
     query: str
     rows: int
     status: Literal["running", "completed", "completed_with_errors", "failed"]
+    orchestrator: Literal["internal", "google_adk"] = "internal"
     steps: list[WorkflowStepRead]
     profile: dict[str, Any] = Field(default_factory=dict)
     opportunities_saved: int = 0

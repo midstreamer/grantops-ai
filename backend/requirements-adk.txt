@@ -1,0 +1,6 @@
+# Optional: Google ADK orchestration layer (discovery workflow routing).
+# Install with: pip install -r requirements-adk.txt
+# Requires Python 3.10+ (Google recommends 3.11+ for ADK).
+
+google-adk>=1.0.0
+
