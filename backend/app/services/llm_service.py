@@ -52,6 +52,10 @@ class LLMProvider(ABC):
     ) -> dict[str, str]:
         """Return structured concept note sections."""
 
+    @abstractmethod
+    def generate_text(self, prompt: str, *, timeout_seconds: int = 30) -> str:
+        """Return plain text completion for smoke tests and diagnostics."""
+
 
 def _format_date(value: Any) -> str:
     if value is None:
@@ -184,6 +188,15 @@ def concept_note_to_markdown(data: dict[str, str]) -> str:
     return "\n".join(parts).strip()
 
 
+def concept_note_markdown_has_required_sections(content: str, *, title: str = "") -> bool:
+    """True when markdown matches concept_note_to_markdown section layout."""
+    text = content.strip()
+    if not text.startswith("# ") or not title.strip():
+        return False
+    body_labels = [label for key, label in CONCEPT_NOTE_SECTIONS if key != "working_title"]
+    return all(f"## {label}" in content for label in body_labels)
+
+
 def _normalize_summary(data: dict[str, Any]) -> dict[str, str]:
     required_keys = [
         "opportunity_summary",
@@ -206,6 +219,16 @@ class OpenAIProvider(LLMProvider):
         self.model = model
 
     def _chat(self, system: str, user: str, *, json_mode: bool = False) -> str:
+        return self._chat_with_timeout(system, user, json_mode=json_mode, timeout_seconds=90)
+
+    def _chat_with_timeout(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool = False,
+        timeout_seconds: int = 90,
+    ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -218,7 +241,7 @@ class OpenAIProvider(LLMProvider):
             payload["response_format"] = {"type": "json_object"}
 
         try:
-            with httpx.Client(timeout=90) as client:
+            with httpx.Client(timeout=timeout_seconds) as client:
                 response = client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={
@@ -229,6 +252,13 @@ class OpenAIProvider(LLMProvider):
                 )
                 response.raise_for_status()
                 body = response.json()
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code if exc.response is not None else "unknown"
+            logger.exception("OpenAI API status error")
+            raise LLMProviderError(f"OpenAI API request failed (status={code}).") from exc
+        except httpx.TimeoutException as exc:
+            logger.exception("OpenAI API timeout")
+            raise LLMProviderError("OpenAI API request timed out.") from exc
         except httpx.HTTPError as exc:
             logger.exception("OpenAI API HTTP error")
             raise LLMProviderError("OpenAI API request failed.") from exc
@@ -279,6 +309,15 @@ class OpenAIProvider(LLMProvider):
         content = self._chat(system, user, json_mode=True)
         return _normalize_concept_note(_parse_json_response(content))
 
+    def generate_text(self, prompt: str, *, timeout_seconds: int = 30) -> str:
+        system = "You are a concise, factual assistant."
+        return self._chat_with_timeout(
+            system,
+            prompt,
+            json_mode=False,
+            timeout_seconds=timeout_seconds,
+        ).strip()
+
 
 class GeminiProvider(LLMProvider):
     def __init__(self, api_key: str, model: str = "gemini-1.5-flash") -> None:
@@ -286,6 +325,15 @@ class GeminiProvider(LLMProvider):
         self.model = model
 
     def _generate(self, prompt: str, *, json_mode: bool = False) -> str:
+        return self._generate_with_timeout(prompt, json_mode=json_mode, timeout_seconds=90)
+
+    def _generate_with_timeout(
+        self,
+        prompt: str,
+        *,
+        json_mode: bool = False,
+        timeout_seconds: int = 90,
+    ) -> str:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent"
@@ -300,7 +348,7 @@ class GeminiProvider(LLMProvider):
         }
 
         try:
-            with httpx.Client(timeout=90) as client:
+            with httpx.Client(timeout=timeout_seconds) as client:
                 response = client.post(
                     url,
                     params={"key": self.api_key},
@@ -308,6 +356,13 @@ class GeminiProvider(LLMProvider):
                 )
                 response.raise_for_status()
                 body = response.json()
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code if exc.response is not None else "unknown"
+            logger.exception("Gemini API status error")
+            raise LLMProviderError(f"Gemini API request failed (status={code}).") from exc
+        except httpx.TimeoutException as exc:
+            logger.exception("Gemini API timeout")
+            raise LLMProviderError("Gemini API request timed out.") from exc
         except httpx.HTTPError as exc:
             logger.exception("Gemini API HTTP error")
             raise LLMProviderError("Gemini API request failed.") from exc
@@ -357,6 +412,13 @@ class GeminiProvider(LLMProvider):
         )
         content = self._generate(prompt, json_mode=True)
         return _normalize_concept_note(_parse_json_response(content))
+
+    def generate_text(self, prompt: str, *, timeout_seconds: int = 30) -> str:
+        return self._generate_with_timeout(
+            prompt,
+            json_mode=False,
+            timeout_seconds=timeout_seconds,
+        ).strip()
 
 
 def get_llm_provider() -> LLMProvider:
@@ -411,3 +473,7 @@ def draft_concept_note_structured(
     return get_llm_provider().draft_concept_note_structured(
         opportunity, profile, literature_items
     )
+
+
+def smoke_test_prompt(prompt: str, *, timeout_seconds: int = 30) -> str:
+    return get_llm_provider().generate_text(prompt, timeout_seconds=timeout_seconds)

@@ -1,6 +1,9 @@
 from unittest.mock import patch
 
-from app.services.llm_service import concept_note_to_markdown
+from app.services.llm_service import (
+    concept_note_markdown_has_required_sections,
+    concept_note_to_markdown,
+)
 
 
 MOCK_CONCEPT_NOTE = {
@@ -15,6 +18,15 @@ MOCK_CONCEPT_NOTE = {
     "why_this_funder_should_care": "Aligns with NSF workforce priorities.",
     "immediate_next_steps": "Confirm partner sites and IRB timeline.",
 }
+
+
+def test_concept_note_markdown_has_required_sections() -> None:
+    markdown = concept_note_to_markdown(MOCK_CONCEPT_NOTE)
+    assert concept_note_markdown_has_required_sections(
+        markdown,
+        title=MOCK_CONCEPT_NOTE["working_title"],
+    )
+    assert not concept_note_markdown_has_required_sections(markdown, title="")
 
 
 def test_concept_note_endpoint_saves_draft(client) -> None:

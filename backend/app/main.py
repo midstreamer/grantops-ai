@@ -12,8 +12,12 @@ from app.routers.export import router as export_router
 from app.routers.literature import router as literature_router
 from app.routers.proposal_drafts import router as proposal_drafts_router
 from app.routers.agents import router as agents_router
+from app.routers.ai import router as ai_router
+from app.routers.scheduled_searches import router as scheduled_searches_router
+from app.routers.weekly_reports import router as weekly_reports_router
 from app.db.session import Base, SessionLocal, engine
 from app.db.seed import ensure_default_research_profile
+from app.services.scheduled_search_service import shutdown_scheduler, start_scheduler
 
 settings = get_settings()
 
@@ -58,6 +62,13 @@ def on_startup() -> None:
     finally:
         db.close()
 
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    shutdown_scheduler()
+
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 def health_check() -> HealthResponse:
@@ -72,3 +83,6 @@ app.include_router(export_router)
 app.include_router(literature_router)
 app.include_router(proposal_drafts_router)
 app.include_router(agents_router)
+app.include_router(ai_router)
+app.include_router(scheduled_searches_router)
+app.include_router(weekly_reports_router)

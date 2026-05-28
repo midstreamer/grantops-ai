@@ -88,6 +88,90 @@ pytest
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
 
+## Confirm AI Works Locally
+
+### 1) Configure backend AI keys
+
+Edit `backend/.env` (create from `backend/.env.example` if needed). Use **one** provider:
+
+For Gemini:
+
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_key_here
+```
+
+For OpenAI:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+```
+
+Ensure local database is configured (default):
+
+```env
+DATABASE_URL=sqlite:///./grantops.db
+```
+
+### 2) Start backend
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+### 3) Start frontend (optional for UI validation)
+
+```bash
+cd frontend
+npm run dev
+```
+
+### 4) Check AI health endpoint
+
+```bash
+curl http://localhost:8000/api/ai/health
+```
+
+Expected shape:
+
+```json
+{
+  "llm_provider": "openai",
+  "api_key_configured": true,
+  "ai_features_available": true,
+  "message": "AI provider is configured."
+}
+```
+
+### 5) Run full local AI validation script
+
+In another terminal:
+
+```bash
+cd backend
+python scripts/test_ai_local.py
+```
+
+The script validates:
+- AI health
+- AI smoke test
+- test research profile presence
+- test opportunity presence
+- AI summary generation
+- concept note generation
+- discovery workflow endpoint
+
+### Common errors and fixes
+
+- **`LLM is not configured`**: set `LLM_PROVIDER` and matching API key in `backend/.env`.
+- **`OPENAI_API_KEY` or `GEMINI_API_KEY` missing**: add the key for the selected provider.
+- **Provider auth/quota errors**: verify key validity, billing/quota, and model access.
+- **Connection refused on script**: backend is not running on `http://localhost:8000`.
+- **No AI output in workflow**: workflow still runs, but AI-specific steps are skipped/fail if keys are missing.
+
 ## License
 
 Private / unlicensed — update as needed for your organization.
